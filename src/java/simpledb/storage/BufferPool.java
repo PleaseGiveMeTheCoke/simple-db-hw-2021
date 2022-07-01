@@ -4,11 +4,13 @@ import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
 import simpledb.common.DeadlockException;
+import simpledb.index.BTreePage;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,6 +35,11 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+
+    private int numPages;
+
+    Page[] pages;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -40,6 +47,8 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        this.numPages = numPages;
+        pages = new Page[numPages];
     }
     
     public static int getPageSize() {
@@ -74,7 +83,15 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+
+        for (Page page : pages) {
+            if(page.getId() == pid){
+                return page;
+            }
+        }
+
+        throw new DbException("can't find page whose id = "+pid);
+
     }
 
     /**

@@ -18,6 +18,7 @@ import java.io.*;
  *
  */
 public class HeapPage implements Page {
+    boolean[] slotFlag;
 
     final HeapPageId pid;
     final TupleDesc td;
@@ -33,6 +34,9 @@ public class HeapPage implements Page {
      * The format of a HeapPage is a set of header bytes indicating
      * the slots of the page that are in use, some number of tuple slots.
      *  Specifically, the number of tuples is equal to: <p>
+     *      设 tupleNum = x
+     *      x*tupleSize*8 + x = BufferPool.getPageSize()*8
+     *      x个比特作为slot
      *          floor((BufferPool.getPageSize()*8) / (tuple size * 8 + 1))
      * <p> where tuple size is the size of tuples in this
      * database table, which can be determined via {@link Catalog#getTupleDesc}.
@@ -54,8 +58,9 @@ public class HeapPage implements Page {
         header = new byte[getHeaderSize()];
         for (int i=0; i<header.length; i++)
             header[i] = dis.readByte();
-        
+        translationHeader(header);
         tuples = new Tuple[numSlots];
+
         try{
             // allocate and read the actual records of this page
             for (int i=0; i<tuples.length; i++)
@@ -68,12 +73,33 @@ public class HeapPage implements Page {
         setBeforeImage();
     }
 
+    private void translationHeader(byte[] header) {
+        StringBuilder sb = new StringBuilder(header.length * Byte.SIZE);
+        for( int i = 0; i < Byte.SIZE * header.length; i++ )
+            sb.append((header[i / Byte.SIZE] << i % Byte.SIZE & 0x80) == 0 ? '0' : '1');
+        slotFlag = new boolean[sb.length()];
+        int index = 0;
+        for(int i = 8; i<=sb.length();i+=8){
+            for (int j = 0; j < 8; j++) {
+                if(sb.charAt(i-j-1)=='1') {
+                    slotFlag[index] = true;
+                }
+                index++;
+            }
+        }
+    }
+
+
+
+
     /** Retrieve the number of tuples on this page.
         @return the number of tuples on this page
     */
-    private int getNumTuples() {        
+    private int getNumTuples() {
         // some code goes here
-        return 0;
+
+        int tupleSize = td.getSize();
+        return (int)Math.floor((BufferPool.getPageSize()*8) / (tupleSize * 8 + 1));
 
     }
 
@@ -82,9 +108,11 @@ public class HeapPage implements Page {
      * @return the number of bytes in the header of a page in a HeapFile with each tuple occupying tupleSize bytes
      */
     private int getHeaderSize() {        
-        
+
         // some code goes here
-        return 0;
+
+        return (int)Math.ceil(numSlots/8);
+
                  
     }
     
@@ -118,7 +146,7 @@ public class HeapPage implements Page {
      */
     public HeapPageId getId() {
     // some code goes here
-    throw new UnsupportedOperationException("implement this");
+        return pid;
     }
 
     /**
@@ -288,7 +316,13 @@ public class HeapPage implements Page {
      */
     public int getNumEmptySlots() {
         // some code goes here
-        return 0;
+        int emptyNum = 0;
+        for (int i = 0; i < getNumTuples(); i++) {
+            if(!slotFlag[i]){
+                emptyNum++;
+            }
+        }
+        return emptyNum;
     }
 
     /**
@@ -296,7 +330,8 @@ public class HeapPage implements Page {
      */
     public boolean isSlotUsed(int i) {
         // some code goes here
-        return false;
+
+        return slotFlag[i];
     }
 
     /**
@@ -312,8 +347,16 @@ public class HeapPage implements Page {
      * (note that this iterator shouldn't return tuples in empty slots!)
      */
     public Iterator<Tuple> iterator() {
+
         // some code goes here
-        return null;
+        ArrayList<Tuple> t = new ArrayList<>();
+        for (int i = 0; i < numSlots; i++) {
+            if(slotFlag[i]){
+                t.add(tuples[i]);
+            }
+        }
+        return t.iterator();
+
     }
 
 }

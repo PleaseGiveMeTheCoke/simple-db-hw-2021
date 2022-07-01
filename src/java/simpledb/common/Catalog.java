@@ -22,13 +22,28 @@ import java.util.concurrent.ConcurrentHashMap;
  * @Threadsafe
  */
 public class Catalog {
+    private ArrayList<TableDesc> tdList;
+
+    private class TableDesc{
+        DbFile file;
+        String name;
+        String pkeyField;
+        int tableId;
+
+        public TableDesc(DbFile file, String name, String pkeyField) {
+            this.file = file;
+            this.name = name;
+            this.pkeyField = pkeyField;
+            this.tableId = file.getId();
+        }
+    }
 
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
-        // some code goes here
+        this.tdList = new ArrayList<>();
     }
 
     /**
@@ -42,6 +57,19 @@ public class Catalog {
      */
     public void addTable(DbFile file, String name, String pkeyField) {
         // some code goes here
+
+        for (int i = 0; i < tdList.size(); i++) {
+            if(tdList.get(i).name.equals(name)){
+                tdList.set(i,new TableDesc(file,name,pkeyField));
+                return;
+            }
+            if(tdList.get(i).tableId == file.getId()){
+                tdList.set(i,new TableDesc(file,name,pkeyField));
+                return;
+            }
+        }
+        tdList.add(new TableDesc(file,name,pkeyField));
+
     }
 
     public void addTable(DbFile file, String name) {
@@ -64,8 +92,12 @@ public class Catalog {
      * @throws NoSuchElementException if the table doesn't exist
      */
     public int getTableId(String name) throws NoSuchElementException {
-        // some code goes here
-        return 0;
+        for (TableDesc tableDesc : tdList) {
+            if(tableDesc.name.equals(name)){
+                return tableDesc.tableId;
+            }
+        }
+        throw new NoSuchElementException("the table with name "+name+" doesn't exist");
     }
 
     /**
@@ -76,8 +108,14 @@ public class Catalog {
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        for (TableDesc tableDesc : tdList) {
+            if(tableDesc.tableId == tableid){
+                return tableDesc.file.getTupleDesc();
+            }
+        }
+        throw new NoSuchElementException("the table with id "+tableid+" doesn't exist");
     }
+
 
     /**
      * Returns the DbFile that can be used to read the contents of the
@@ -87,27 +125,46 @@ public class Catalog {
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        for (TableDesc tableDesc : tdList) {
+            if(tableDesc.tableId == tableid){
+                return tableDesc.file;
+            }
+        }
+        throw new NoSuchElementException("the table with id "+tableid+" doesn't exist");
     }
 
     public String getPrimaryKey(int tableid) {
         // some code goes here
-        return null;
+        for (TableDesc tableDesc : tdList) {
+            if(tableDesc.tableId == tableid){
+                return tableDesc.pkeyField;
+            }
+        }
+        throw new NoSuchElementException("the table with id "+tableid+" doesn't exist");
     }
 
     public Iterator<Integer> tableIdIterator() {
         // some code goes here
-        return null;
+        ArrayList<Integer> ar = new ArrayList<>();
+        for (TableDesc tableDesc : tdList) {
+            ar.add(tableDesc.tableId);
+        }
+        return ar.iterator();
     }
 
     public String getTableName(int id) {
         // some code goes here
+        for (TableDesc tableDesc : tdList) {
+            if(tableDesc.tableId == id){
+                return tableDesc.name;
+            }
+        }
         return null;
     }
     
     /** Delete all tables from the catalog */
     public void clear() {
-        // some code goes here
+        tdList = new ArrayList<>();
     }
     
     /**

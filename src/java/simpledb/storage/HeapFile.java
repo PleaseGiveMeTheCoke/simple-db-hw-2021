@@ -1,9 +1,6 @@
 package simpledb.storage;
 
-import simpledb.common.Database;
-import simpledb.common.DbException;
-import simpledb.common.Debug;
-import simpledb.common.Permissions;
+import simpledb.common.*;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -21,7 +18,11 @@ import java.util.*;
  * @author Sam Madden
  */
 public class HeapFile implements DbFile {
+    File f;
 
+    TupleDesc td;
+
+    ArrayList<HeapPage> pages;
     /**
      * Constructs a heap file backed by the specified file.
      * 
@@ -31,6 +32,31 @@ public class HeapFile implements DbFile {
      */
     public HeapFile(File f, TupleDesc td) {
         // some code goes here
+        this.f = f;
+        this.td = td;
+        Database.getCatalog().addTable(this);
+        loadPageFromFile(f);
+    }
+
+    private void loadPageFromFile(File f) {
+        int pageSize = BufferPool.getPageSize();
+        pages = new ArrayList<>();
+
+        try {
+            InputStream inputStream = new FileInputStream(f);
+            while (true){
+                byte[] bytes = new byte[pageSize];
+                int ret = inputStream.read(bytes);
+                if(ret == -1){
+                    break;
+                }
+                HeapPage page = new HeapPage(new HeapPageId(getId(),pages.size()),bytes);
+                pages.add(page);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
     }
 
     /**
@@ -40,7 +66,7 @@ public class HeapFile implements DbFile {
      */
     public File getFile() {
         // some code goes here
-        return null;
+        return f;
     }
 
     /**
@@ -54,7 +80,7 @@ public class HeapFile implements DbFile {
      */
     public int getId() {
         // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return f.getAbsoluteFile().hashCode();
     }
 
     /**
@@ -64,13 +90,13 @@ public class HeapFile implements DbFile {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        throw new UnsupportedOperationException("implement this");
+        return td;
     }
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
         // some code goes here
-        return null;
+        return pages.get(pid.getPageNumber());
     }
 
     // see DbFile.java for javadocs
@@ -84,7 +110,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
-        return 0;
+        return pages.size();
     }
 
     // see DbFile.java for javadocs
@@ -106,7 +132,8 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public DbFileIterator iterator(TransactionId tid) {
         // some code goes here
-        return null;
+
+        return new HeapFileIterator(pages);
     }
 
 }
