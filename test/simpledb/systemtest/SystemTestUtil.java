@@ -124,18 +124,23 @@ public class SystemTestUtil {
         }
 
         iterator.open();
+        System.out.println(copy.toString());
         while (iterator.hasNext()) {
+
             Tuple t = iterator.next();
             List<Integer> list = tupleToList(t);
             boolean isExpected = copy.remove(list);
             Debug.log("scanned tuple: %s (%s)", t, isExpected ? "expected" : "not expected");
+            Debug.log("scanned tuple: %s (%s)", t, isExpected ? "expected" : "not expected");
             if (!isExpected) {
                 Assert.fail("expected tuples does not contain: " + t);
             }
+
         }
         iterator.close();
 
         if (!copy.isEmpty()) {
+
             StringBuilder msg = new StringBuilder("expected to find the following tuples:\n");
             final int MAX_TUPLES_OUTPUT = 10;
             int count = 0;

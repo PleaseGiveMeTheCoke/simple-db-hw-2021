@@ -1,6 +1,9 @@
 package simpledb.storage;
 
+import jdk.nashorn.internal.ir.CallNode;
 import simpledb.common.*;
+import simpledb.index.BTreePageId;
+import simpledb.index.BTreeRootPtrPage;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -23,6 +26,8 @@ public class HeapFile implements DbFile {
     TupleDesc td;
 
     ArrayList<HeapPage> pages;
+
+    DbFileIterator it;
     /**
      * Constructs a heap file backed by the specified file.
      * 
@@ -34,10 +39,15 @@ public class HeapFile implements DbFile {
         // some code goes here
         this.f = f;
         this.td = td;
+
         Database.getCatalog().addTable(this);
         loadPageFromFile(f);
-    }
 
+       // this.it = new HeapFileIterator(pages);
+    }
+    public int getPageNum(){
+        return pages.size();
+    }
     private void loadPageFromFile(File f) {
         int pageSize = BufferPool.getPageSize();
         pages = new ArrayList<>();
@@ -50,6 +60,7 @@ public class HeapFile implements DbFile {
                 if(ret == -1){
                     break;
                 }
+
                 HeapPage page = new HeapPage(new HeapPageId(getId(),pages.size()),bytes);
                 pages.add(page);
             }
@@ -95,14 +106,21 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
+        HeapPageId heapPageId = (HeapPageId) pid;
         // some code goes here
-        return pages.get(pid.getPageNumber());
+
+        return pages.get(heapPageId.pgNo);
     }
 
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+        int num = page.getId().getPageNumber();
+        byte[] data = page.getPageData();
+        RandomAccessFile rf = new RandomAccessFile(f, "rw");
+        rf.seek(BufferPool.getPageSize()*num);
+        rf.write(data);
+        rf.close();
+        loadPageFromFile(f);
     }
 
     /**
@@ -115,25 +133,46 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public List<Page> insertTuple(TransactionId tid, Tuple t)
-            throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+            throws DbException, IOException,TransactionAbortedException {
+        List<Page> res = new ArrayList<>();
+        for (HeapPage page : pages) {
+            //通过buffer pool来访问该页
+            HeapPage hp = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_WRITE);
+            //该页有空位
+            if(hp.getNumEmptySlots()!=0){
+                hp.insertTuple(t);
+                res.add(hp);
+                return res;
+            }
+        }
+        //所有页都满了,创建新页
+        HeapPage page = new HeapPage(new HeapPageId(getId(),pages.size()));
+        page.insertTuple(t);
+        this.pages.add(page);
+        res.add(page);
+        return res;
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        ArrayList<Page> res = new ArrayList<>();
+        for (HeapPage page : pages) {
+            HeapPage hp = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_WRITE);
+            if(hp.getTupleSlotNum(t.getRecordId())!=-1){
+                hp.deleteTuple(t);
+                res.add(hp);
+                break;
+            }
+        }
+        return res;
     }
 
     // see DbFile.java for javadocs
     public DbFileIterator iterator(TransactionId tid) {
         // some code goes here
 
-        return new HeapFileIterator(pages);
+        return new HeapFileIterator(this,tid);
     }
 
 }

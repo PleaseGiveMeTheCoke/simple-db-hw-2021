@@ -1,7 +1,17 @@
 package simpledb.execution;
 
+import simpledb.common.DbException;
 import simpledb.common.Type;
+import simpledb.storage.Field;
+import simpledb.storage.IntField;
 import simpledb.storage.Tuple;
+import simpledb.storage.TupleDesc;
+import simpledb.transaction.TransactionAbortedException;
+
+import java.util.*;
+
+import static simpledb.execution.Aggregator.Op.MAX;
+import static simpledb.execution.Aggregator.Op.MIN;
 
 /**
  * Knows how to compute some aggregate over a set of IntFields.
@@ -10,6 +20,11 @@ public class IntegerAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
 
+    List<Tuple> tuples;
+    int gbfield;
+    Type gbfieldtype;
+    int afield;
+    Op what;
     /**
      * Aggregate constructor
      * 
@@ -27,6 +42,11 @@ public class IntegerAggregator implements Aggregator {
 
     public IntegerAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
         // some code goes here
+        this.afield = afield;
+        this.gbfield = gbfield;
+        this.gbfieldtype = gbfieldtype;
+        this.what = what;
+        tuples = new ArrayList<>();
     }
 
     /**
@@ -38,6 +58,8 @@ public class IntegerAggregator implements Aggregator {
      */
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
+        tuples.add(tup);
+
     }
 
     /**
@@ -49,9 +71,199 @@ public class IntegerAggregator implements Aggregator {
      *         the constructor.
      */
     public OpIterator iterator() {
-        // some code goes here
-        throw new
-        UnsupportedOperationException("please implement me for lab2");
+        if(gbfield == Aggregator.NO_GROUPING){
+
+            if(what==MIN) {
+                int min = Integer.parseInt(tuples.get(0).getField(afield).toString());
+                for (Tuple tuple : tuples) {
+                    min = Math.min(min, Integer.parseInt(tuple.getField(afield).toString()));
+                }
+                TupleDesc td = new TupleDesc(new Type[]{Type.INT_TYPE});
+                Tuple tuple = new Tuple(td);
+                tuple.setField(0, new IntField(min));
+                return new IAIterator(tuple);
+            }else if(what == MAX) {
+                int max = Integer.parseInt(tuples.get(0).getField(afield).toString());
+                for (Tuple tuple : tuples) {
+                    max = Math.max(max, Integer.parseInt(tuple.getField(afield).toString()));
+                }
+                TupleDesc td = new TupleDesc(new Type[]{Type.INT_TYPE});
+                Tuple tuple = new Tuple(td);
+                tuple.setField(0, new IntField(max));
+                return new IAIterator(tuple);
+            }else if(what == Op.AVG){
+                int sum = 0;
+                int count = 0;
+                for (Tuple tuple : tuples) {
+                    count++;
+                    sum += Integer.parseInt(tuple.getField(afield).toString());
+                }
+                TupleDesc td = new TupleDesc(new Type[]{Type.INT_TYPE});
+                Tuple tuple = new Tuple(td);
+                tuple.setField(0, new IntField(sum/count));
+                return new IAIterator(tuple);
+            }else if(what == Op.COUNT){
+
+                int count = 0;
+                for (Tuple tuple : tuples) {
+                    count++;
+                }
+                TupleDesc td = new TupleDesc(new Type[]{Type.INT_TYPE});
+                Tuple tuple = new Tuple(td);
+                tuple.setField(0, new IntField(count));
+                return new IAIterator(tuple);
+            }else if(what == Op.SUM){
+                int sum = 0;
+
+                for (Tuple tuple : tuples) {
+
+                    sum += Integer.parseInt(tuple.getField(afield).toString());
+                }
+                TupleDesc td = new TupleDesc(new Type[]{Type.INT_TYPE});
+                Tuple tuple = new Tuple(td);
+                tuple.setField(0, new IntField(sum));
+                return new IAIterator(tuple);
+            }else{
+                System.out.println("不支持的运算符");
+                return null;
+            }
+        }else{
+
+            Map<String,List<Tuple>> map = new HashMap<>();
+
+            for (Tuple tuple : tuples) {
+                Field field = tuple.getField(gbfield);
+                if(map.get(field.toString())==null){
+                    List<Tuple> ls = new ArrayList<>();
+                    ls.add(tuple);
+                    map.put(field.toString(),ls);
+                }else{
+                    List<Tuple> tuples = map.get(field.toString());
+                    tuples.add(tuple);
+                    map.put(field.toString(),tuples);
+                }
+            }
+            List<Tuple> tuples = new ArrayList<>();
+            for (List<Tuple> value : map.values()) {
+                Tuple aggregate = aggregate(value);
+                tuples.add(aggregate);
+            }
+            return new IAIterator(tuples);
+        }
     }
+    public Tuple aggregate(List<Tuple> tuples){
+        Field groupField = tuples.get(0).getField(gbfield);
+        if(what==MIN) {
+            int min = Integer.parseInt(tuples.get(0).getField(afield).toString());
+            for (Tuple tuple : tuples) {
+                min = Math.min(min, Integer.parseInt(tuple.getField(afield).toString()));
+            }
+            TupleDesc td = new TupleDesc(new Type[]{gbfieldtype,Type.INT_TYPE});
+            Tuple tuple = new Tuple(td);
+            tuple.setField(1, new IntField(min));
+            tuple.setField(0,groupField);
+            return tuple;
+        }else if(what == MAX) {
+            int max = Integer.parseInt(tuples.get(0).getField(afield).toString());
+            for (Tuple tuple : tuples) {
+                max = Math.max(max, Integer.parseInt(tuple.getField(afield).toString()));
+            }
+            TupleDesc td = new TupleDesc(new Type[]{gbfieldtype,Type.INT_TYPE});
+            Tuple tuple = new Tuple(td);
+            tuple.setField(1, new IntField(max));
+            tuple.setField(0,groupField);
+            return tuple;
+        }else if(what == Op.AVG){
+            int sum = 0;
+            int count = 0;
+            for (Tuple tuple : tuples) {
+                count++;
+                sum += Integer.parseInt(tuple.getField(afield).toString());
+            }
+            TupleDesc td = new TupleDesc(new Type[]{gbfieldtype,Type.INT_TYPE});
+            Tuple tuple = new Tuple(td);
+            tuple.setField(1, new IntField(sum/count));
+            tuple.setField(0,groupField);
+            return tuple;
+        }else if(what == Op.COUNT){
+
+            int count = 0;
+            for (Tuple tuple : tuples) {
+                count++;
+            }
+            TupleDesc td = new TupleDesc(new Type[]{gbfieldtype,Type.INT_TYPE});
+            Tuple tuple = new Tuple(td);
+            tuple.setField(1, new IntField(count));
+            tuple.setField(0,groupField);
+            return tuple;
+        }else if(what == Op.SUM){
+            int sum = 0;
+
+            for (Tuple tuple : tuples) {
+
+                sum += Integer.parseInt(tuple.getField(afield).toString());
+            }
+            TupleDesc td = new TupleDesc(new Type[]{gbfieldtype,Type.INT_TYPE});
+            Tuple tuple = new Tuple(td);
+            tuple.setField(1, new IntField(sum));
+            tuple.setField(0,groupField);
+            return tuple;
+        }else{
+            System.out.println("不支持的运算符");
+            return null;
+        }
+    }
+
+    class IAIterator implements OpIterator{
+        List<Tuple> tuples;
+        Iterator<Tuple> it;
+        IAIterator(Tuple t){
+            tuples = new ArrayList<>();
+            tuples.add(t);
+        }
+
+        IAIterator(List<Tuple> ts){
+            tuples = ts;
+        }
+
+
+        @Override
+        public void open() throws DbException, TransactionAbortedException {
+            it = tuples.iterator();
+        }
+
+        @Override
+        public boolean hasNext() throws DbException, TransactionAbortedException {
+            if(it == null){
+                return false;
+            }
+            return it.hasNext();
+        }
+
+        @Override
+        public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
+            if(it == null){
+                return null;
+            }
+            return it.next();
+        }
+
+        @Override
+        public void rewind() throws DbException, TransactionAbortedException {
+            it = tuples.iterator();
+        }
+
+        @Override
+        public TupleDesc getTupleDesc() {
+            return tuples.get(0).getTupleDesc();
+        }
+
+        @Override
+        public void close() {
+            it = null;
+        }
+    }
+
+
 
 }

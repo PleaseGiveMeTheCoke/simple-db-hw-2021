@@ -130,7 +130,8 @@ public class TupleDesc implements Serializable {
     public Type getFieldType(int i) throws NoSuchElementException {
         // some code goes here
         if(i < 0 || i >= itemList.size()){
-            throw new NoSuchElementException("i is not a valid field reference");
+            System.out.println(i+" is not a valid field reference");
+            return null;
         }
 
         return itemList.get(i).fieldType;

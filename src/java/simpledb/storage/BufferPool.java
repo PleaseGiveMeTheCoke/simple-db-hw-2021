@@ -10,7 +10,10 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.sql.SQLOutput;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -82,15 +85,25 @@ public class BufferPool {
      */
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // some code goes here
 
+        //先在缓冲区找,找到了直接返回
         for (Page page : pages) {
-            if(page.getId() == pid){
+            if(page!=null&&page.getId().equals(pid)){
                 return page;
             }
         }
+        //找不到就读取页,然后加入缓冲区并返回
+        DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+        Page page = file.readPage(pid);
+        for (int i = 0; i < numPages; i++) {
+            if(pages[i] == null){
+                pages[i] = page;
+                return page;
+            }
 
-        throw new DbException("can't find page whose id = "+pid);
+        }
+        pages[0] = page;
+        return page;
 
     }
 
@@ -154,8 +167,30 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+
+        DbFile file = Database.getCatalog().getDatabaseFile(tableId);
+        List<Page> affectedPages = file.insertTuple(tid, t);
+        int flag = 0;
+        for (Page page : affectedPages) {
+            for (int i = 0; i < pages.length; i++) {
+                if(pages[i] != null&&page.getId().equals(pages[i].getId())){
+                    pages[i] = page;
+                    pages[i].markDirty(true,tid);
+                    flag = 1;
+                    break;
+                }
+            }
+            if(flag == 0) {
+                for (int i = 0; i < pages.length; i++) {
+                    if (pages[i] == null) {
+                        pages[i] = page;
+                        pages[i].markDirty(true, tid);
+                        break;
+                    }
+                }
+            }
+            flag = 0;
+        }
     }
 
     /**
@@ -173,8 +208,16 @@ public class BufferPool {
      */
     public  void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        DbFile file = Database.getCatalog().getDatabaseFile(t.getRecordId().pid.getTableId());
+        List<Page> affectedPages = file.deleteTuple(tid, t);
+        for (Page page : affectedPages) {
+            for (Page page1 : pages) {
+                if(page.getId().equals(page1.getId())){
+                    page1.markDirty(true,tid);
+                    break;
+                }
+            }
+        }
     }
 
     /**

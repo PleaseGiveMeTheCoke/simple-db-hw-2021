@@ -49,6 +49,7 @@ public class BufferPoolWriteTest extends TestUtil.CreateHeapFile {
     			HeapPage p = new HeapPage(new HeapPageId(super.getId(), super.numPages() - 1),
     					HeapPage.createEmptyPageData());
     	        p.insertTuple(t);
+
     			dirtypages.add(p);
     		}
     		return dirtypages;
@@ -76,6 +77,7 @@ public class BufferPoolWriteTest extends TestUtil.CreateHeapFile {
         	Tuple t = Utility.getHeapTuple(i, 2);
         	Database.getBufferPool().insertTuple(tid, empty.getId(), t);
         	HeapPage p = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_ONLY);
+
         	assertEquals(504-i-1, p.getNumEmptySlots());
         }
 

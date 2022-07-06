@@ -38,6 +38,7 @@ public class ScanTest extends SimpleDbTestBase {
                 SystemTestUtil.matchTuples(f, tuples);
                 Database.resetBufferPool(BufferPool.DEFAULT_PAGES);
             }
+            System.out.println();
         }
     }
 
@@ -57,6 +58,7 @@ public class ScanTest extends SimpleDbTestBase {
         TransactionId tid = new TransactionId();
         SeqScan scan = new SeqScan(tid, f.getId(), "table");
         scan.open();
+
         for (int i = 0; i < 100; ++i) {
             assertTrue(scan.hasNext());
             Tuple t = scan.next();
