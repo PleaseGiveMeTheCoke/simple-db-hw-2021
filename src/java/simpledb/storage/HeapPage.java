@@ -5,7 +5,9 @@ import simpledb.common.DbException;
 import simpledb.common.Debug;
 import simpledb.common.Catalog;
 import simpledb.transaction.TransactionId;
+import sun.misc.IOUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.io.*;
 
@@ -123,9 +125,26 @@ public class HeapPage implements Page {
                 index++;
             }
         }
+
+        int hi = 0;
+        for (int i = 0; i < sb.length(); i+=8) {
+            String substring = sb.substring(i, i + 8);
+            int i1 = Integer.parseInt(substring, 2);
+            header[hi] = (byte) i1;
+            hi++;
+        }
+
+
+
     }
 
-    public int getTupleSlotNum(RecordId recordId){
+    public static void main(String[] args) {
+            int i = 49;
+            byte[] bytes = new byte[1];
+            bytes[0] =(byte) i;
+            System.out.println(bytes[0]);
+    }
+    public  int getTupleSlotNum(RecordId recordId){
         for (int i = 0; i < numSlots; i++) {
             if(tuples[i].getRecordId().equals(recordId)){
                 return i;
@@ -326,7 +345,7 @@ public class HeapPage implements Page {
      */
     public void deleteTuple(Tuple t) throws DbException {
         RecordId recordId = t.getRecordId();
-        if(recordId.pid != this.pid){
+        if(!recordId.pid.equals(this.pid)){
             throw new DbException("the tuple is not on this page");
         }
         int tupleNum = recordId.tupleNum;

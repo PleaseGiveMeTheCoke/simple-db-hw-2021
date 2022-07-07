@@ -106,10 +106,21 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
-        HeapPageId heapPageId = (HeapPageId) pid;
-        // some code goes here
+        try {
+            int num = pid.getPageNumber();
+            byte[] data = new byte[BufferPool.getPageSize()];
+            RandomAccessFile rf = new RandomAccessFile(f, "rw");
+            rf.seek(BufferPool.getPageSize() * num);
+            rf.read(data);
+            rf.close();
+            return new HeapPage((HeapPageId) pid, data);
+        }catch (Exception e){
+            e.printStackTrace();
+            return null;
+        }
+//        HeapPageId HPID = (HeapPageId) pid;
+//        return pages.get(HPID.getPageNumber());
 
-        return pages.get(heapPageId.pgNo);
     }
 
     // see DbFile.java for javadocs
@@ -120,7 +131,7 @@ public class HeapFile implements DbFile {
         rf.seek(BufferPool.getPageSize()*num);
         rf.write(data);
         rf.close();
-        loadPageFromFile(f);
+        pages.add((HeapPage) page);
     }
 
     /**
@@ -148,7 +159,9 @@ public class HeapFile implements DbFile {
         //所有页都满了,创建新页
         HeapPage page = new HeapPage(new HeapPageId(getId(),pages.size()));
         page.insertTuple(t);
-        this.pages.add(page);
+        //将新页写入磁盘
+        writePage(page);
+
         res.add(page);
         return res;
     }
