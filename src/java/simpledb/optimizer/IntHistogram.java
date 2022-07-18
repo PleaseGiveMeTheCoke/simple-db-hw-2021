@@ -2,9 +2,20 @@ package simpledb.optimizer;
 
 import simpledb.execution.Predicate;
 
+import java.util.Arrays;
+
 /** A class to represent a fixed-width histogram over a single integer-based field.
  */
 public class IntHistogram {
+
+    private int buckets;
+
+    private int min;
+
+    private int max;
+
+    private int[] histogram;
+
 
     /**
      * Create a new IntHistogram.
@@ -22,8 +33,13 @@ public class IntHistogram {
      * @param min The minimum integer value that will ever be passed to this class for histogramming
      * @param max The maximum integer value that will ever be passed to this class for histogramming
      */
+
     public IntHistogram(int buckets, int min, int max) {
-    	// some code goes here
+    	this.buckets = buckets;
+        this.max = max;
+        this.min = min;
+        histogram = new int[buckets];
+
     }
 
     /**
@@ -31,7 +47,19 @@ public class IntHistogram {
      * @param v Value to add to the histogram
      */
     public void addValue(int v) {
-    	// some code goes here
+        try {
+
+            double unit = (double) (max - min + 1) / buckets;
+
+
+            int i = (int) Math.floor((v - min) / unit);
+
+
+            histogram[i]++;
+        }catch (Exception e){
+            System.out.println(v);
+        }
+
     }
 
     /**
@@ -46,8 +74,112 @@ public class IntHistogram {
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
 
-    	// some code goes here
-        return -1.0;
+        int ntups = 0;
+        for (int num : histogram) {
+            ntups+=num;
+        }
+
+        if(op.equals(Predicate.Op.EQUALS)){
+            if(v<min||v>max){
+                return 0.0;
+            }
+
+            double w =(double) (max - min + 1) / buckets;
+
+            int i = (int) Math.floor((v - min) / w);
+
+            int h = histogram[i];
+            w = Math.max(1,w);
+            return (double) (h / w) / ntups;
+
+           // return 1-estimateSelectivity(Predicate.Op.GREATER_THAN, v)-estimateSelectivity(Predicate.Op.LESS_THAN,v);
+
+        }else if(op.equals(Predicate.Op.NOT_EQUALS)){
+            if(v<min||v>max){
+                return 1.0;
+            }
+
+            return 1-estimateSelectivity(Predicate.Op.EQUALS, v);
+        }else if(op.equals(Predicate.Op.GREATER_THAN)){
+            if(v<min){
+                return 1.0;
+            }
+
+            if(v>max){
+                return 0.0;
+            }
+            double w_b= (double) (max - min + 1) / buckets;
+
+
+            int i = (int) Math.floor((v - min) / w_b);
+
+            int h_b = histogram[i];
+
+            double b_f = (double) h_b / ntups;
+
+            int b_right = (int) (min+(i+1)*w_b-1);
+            w_b = Math.max(1,w_b);
+            double b_part = (double) (b_right - v) / w_b;
+
+            double sum = b_f*b_part;
+            for (int j = i+1; j < buckets; j++) {
+                sum+=(double) histogram[j]/ntups;
+            }
+            return sum;
+
+        }else if(op.equals(Predicate.Op.LESS_THAN_OR_EQ)){
+            if(v<min){
+                return 0.0;
+            }
+
+            if(v>=max){
+                return 1.0;
+            }
+
+            return 1-estimateSelectivity(Predicate.Op.GREATER_THAN,v);
+        }else if(op.equals(Predicate.Op.LESS_THAN)){
+            if(v<min){
+                return 0.0;
+            }
+
+            if(v>max){
+                return 1.0;
+            }
+
+            double w_b= (double) (max - min + 1) / buckets;
+
+
+            int i = (int) Math.floor((v - min) / w_b);
+
+            int h_b = histogram[i];
+
+            double b_f = (double) h_b / ntups;
+
+            int b_left = (int)(min+i*w_b);
+
+            w_b = Math.max(1,w_b);
+            double b_part = (double) (v-b_left) / w_b;
+
+            double sum = b_f*b_part;
+            for (int j = i-1; j >= 0; j--) {
+                sum+=(double) histogram[j]/ntups;
+            }
+            return sum;
+        }else if(op.equals(Predicate.Op.GREATER_THAN_OR_EQ)){
+            if(v<=min){
+                return 1.0;
+            }
+
+            if(v>max){
+                return 0.0;
+            }
+
+            return 1-estimateSelectivity(Predicate.Op.LESS_THAN,v);
+        }else{
+
+            System.out.println(op.toString()+"don't support");
+            return -1.0;
+        }
     }
     
     /**
@@ -69,6 +201,8 @@ public class IntHistogram {
      */
     public String toString() {
         // some code goes here
-        return null;
+        return "min = "+this.min+"\n"
+                +"max = "+this.max+"\n"
+                + Arrays.toString(histogram)+"\n";
     }
 }

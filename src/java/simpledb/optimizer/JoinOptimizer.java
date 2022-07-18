@@ -3,7 +3,9 @@ package simpledb.optimizer;
 import simpledb.common.Database;
 import simpledb.ParsingException;
 import simpledb.execution.*;
+import simpledb.storage.DbFileIterator;
 import simpledb.storage.TupleDesc;
+import simpledb.transaction.TransactionId;
 
 import java.util.*;
 
@@ -130,7 +132,7 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            return cost1+card1*cost2+card1*card2;
         }
     }
 
@@ -175,7 +177,19 @@ public class JoinOptimizer {
                                                    boolean t2pkey, Map<String, TableStats> stats,
                                                    Map<String, Integer> tableAliasToId) {
         int card = 1;
-        // some code goes here
+        if(joinOp.equals(Predicate.Op.EQUALS)){
+            if(t1pkey && t2pkey){
+                card = Math.min(card1,card2);
+            }else if(t1pkey){
+                card = card2;
+            }else if(t2pkey){
+                card = card1;
+            }else{
+                card = card1+card2;
+            }
+        }else{
+            card = (int)((card1+card2)*0.3);
+        }
         return card <= 0 ? 1 : card;
     }
 
@@ -206,9 +220,7 @@ public class JoinOptimizer {
             }
             els = newels;
         }
-
         return els;
-
     }
 
     /**
@@ -235,9 +247,27 @@ public class JoinOptimizer {
             Map<String, TableStats> stats,
             Map<String, Double> filterSelectivities, boolean explain)
             throws ParsingException {
-
-        // some code goes here
-        //Replace the following
+        PlanCache pc = new PlanCache();
+        //for (i in 1...|j|):
+        for (int i = 1; i <= joins.size(); i++) {
+            Set<Set<LogicalJoinNode>> sets = enumerateSubsets(joins, i);
+            //for s in {all length i subsets of j}
+            for (Set<LogicalJoinNode> set : sets) {
+                //bestPlan = {}
+                double bestCostSoFar = Double.MAX_VALUE;
+                for (LogicalJoinNode logicalJoinNode : set) {
+                    CostCard costCard = computeCostAndCardOfSubplan(stats, filterSelectivities, logicalJoinNode, set, bestCostSoFar, pc);
+                    if(costCard != null && bestCostSoFar < costCard.cost){
+                        bestCostSoFar = costCard.cost;
+                        pc.addPlan(set,bestCostSoFar,costCard.card,costCard.plan);
+                    }
+                }
+                if(set.size() == joins.size()){
+                    joins.clear();
+                    joins.addAll(set);
+                }
+            }
+        }
         return joins;
     }
 

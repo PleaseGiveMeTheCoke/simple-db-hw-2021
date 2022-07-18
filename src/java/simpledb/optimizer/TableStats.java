@@ -3,13 +3,10 @@ package simpledb.optimizer;
 import simpledb.common.Database;
 import simpledb.common.Type;
 import simpledb.execution.Predicate;
-import simpledb.execution.SeqScan;
 import simpledb.storage.*;
-import simpledb.transaction.Transaction;
+import simpledb.transaction.TransactionId;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -20,6 +17,13 @@ import java.util.concurrent.ConcurrentMap;
  * This class is not needed in implementing lab1 and lab2.
  */
 public class TableStats {
+    private int pageNum;
+
+    private int ioCostPerPage;
+
+    private DbFile databaseFile;
+
+    private int tuplesNum;
 
     private static final ConcurrentMap<String, TableStats> statsMap = new ConcurrentHashMap<>();
 
@@ -67,7 +71,12 @@ public class TableStats {
      * histograms.
      */
     static final int NUM_HIST_BINS = 100;
-
+    private ArrayList<Integer> intIndexes;
+    private ArrayList<Integer> stringIndexes;
+    private int[] maxValues;
+    private int[] minValues;
+    private IntHistogram[] intHistograms;
+    private StringHistogram[] stringHistograms;
     /**
      * Create a new TableStats object, that keeps track of statistics on each
      * column of a table
@@ -87,6 +96,73 @@ public class TableStats {
         // necessarily have to (for example) do everything
         // in a single scan of the table.
         // some code goes here
+        DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableid);
+        this.ioCostPerPage = ioCostPerPage;
+        this.databaseFile = databaseFile;
+        this.intIndexes = new ArrayList<>();
+        this.stringIndexes = new ArrayList<>();
+        TupleDesc tupleDesc = databaseFile.getTupleDesc();
+        int numberFields = tupleDesc.numFields();
+        for (int i = 0; i < numberFields; i++) {
+            if(tupleDesc.getFieldType(i).equals(Type.INT_TYPE)){
+                intIndexes.add(i);
+            }else{
+                stringIndexes.add(i);
+            }
+        }
+        maxValues = new int[intIndexes.size()];
+        Arrays.fill(maxValues,Integer.MIN_VALUE);
+        minValues = new int[intIndexes.size()];
+        Arrays.fill(minValues,Integer.MAX_VALUE);
+        intHistograms = new IntHistogram[intIndexes.size()];
+        stringHistograms = new StringHistogram[stringIndexes.size()];
+
+
+        DbFileIterator iterator = databaseFile.iterator(new TransactionId());
+        try {
+            iterator.open();
+            while (iterator.hasNext()){
+                tuplesNum++;
+                Tuple next = iterator.next();
+                this.pageNum = next.getRecordId().getPageId().getPageNumber();
+                for (int i = 0; i < intIndexes.size(); i++) {
+                    int index = intIndexes.get(i);
+                    Field field = next.getField(index);
+                    minValues[i] = Math.min(minValues[i],Integer.parseInt(field.toString()));
+                    maxValues[i] = Math.max(maxValues[i],Integer.parseInt(field.toString()));
+                }
+            }
+            for (int i = 0; i < intIndexes.size(); i++) {
+                intHistograms[i] = new IntHistogram(NUM_HIST_BINS,minValues[i],maxValues[i]);
+            }
+            for (int i = 0; i < stringIndexes.size(); i++) {
+                stringHistograms[i] = new StringHistogram(NUM_HIST_BINS);
+            }
+
+            iterator.rewind();
+            while (iterator.hasNext()){
+                Tuple next = iterator.next();
+                for (int i = 0; i < intIndexes.size(); i++) {
+                    int index = intIndexes.get(i);
+                    Field field = next.getField(index);
+                    int v = Integer.parseInt(field.toString());
+                    intHistograms[i].addValue(v);
+                }
+
+                for (int i = 0; i < stringIndexes.size(); i++) {
+                    int index = stringIndexes.get(i);
+                    Field field = next.getField(index);
+                    String v = field.toString();
+                    stringHistograms[i].addValue(v);
+                }
+            }
+
+            iterator.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
     }
 
     /**
@@ -102,8 +178,7 @@ public class TableStats {
      * @return The estimated cost of scanning the table.
      */
     public double estimateScanCost() {
-        // some code goes here
-        return 0;
+        return (pageNum+1)*ioCostPerPage;
     }
 
     /**
@@ -117,7 +192,7 @@ public class TableStats {
      */
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
-        return 0;
+        return (int) (tuplesNum*selectivityFactor);
     }
 
     /**
@@ -149,16 +224,34 @@ public class TableStats {
      *         predicate
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
-        // some code goes here
-        return 1.0;
+        if(constant.getType().equals(Type.STRING_TYPE)){
+            int i = -1;
+            for (int j = 0; j < stringIndexes.size(); j++) {
+                if(stringIndexes.get(j) == field){
+                    i = j;
+                    break;
+                }
+            }
+            StringHistogram histogram = stringHistograms[i];
+            return histogram.estimateSelectivity(op,constant.toString());
+        }else{
+            int i = -1;
+            for (int j = 0; j < intIndexes.size(); j++) {
+                if(intIndexes.get(j) == field){
+                    i = j;
+                    break;
+                }
+            }
+            IntHistogram histogram = intHistograms[i];
+            return histogram.estimateSelectivity(op,Integer.parseInt(constant.toString()));
+        }
     }
 
     /**
      * return the total number of tuples in this table
      * */
     public int totalTuples() {
-        // some code goes here
-        return 0;
+        return tuplesNum;
     }
 
 }
