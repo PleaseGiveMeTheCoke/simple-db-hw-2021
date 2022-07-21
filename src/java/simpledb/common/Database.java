@@ -2,8 +2,10 @@ package simpledb.common;
 
 import simpledb.storage.BufferPool;
 import simpledb.storage.LogFile;
+import simpledb.transaction.LockManager;
 
 import java.io.*;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -58,6 +60,7 @@ public class Database {
      * return it
      */
     public static BufferPool resetBufferPool(int pages) {
+        LockManager.reset();
         java.lang.reflect.Field bufferPoolF=null;
         try {
             bufferPoolF = Database.class.getDeclaredField("_bufferpool");
@@ -68,6 +71,8 @@ public class Database {
         }
 //        _instance._bufferpool = new BufferPool(pages);
         return _instance.get()._bufferpool;
+
+
     }
 
     // reset the database, used for unit tests only.

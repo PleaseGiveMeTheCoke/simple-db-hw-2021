@@ -5,6 +5,7 @@ import simpledb.common.Permissions;
 import simpledb.common.DbException;
 import simpledb.common.DeadlockException;
 import simpledb.index.BTreePage;
+import simpledb.transaction.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -142,7 +143,25 @@ public class BufferPool {
      */
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-
+        if(perm.equals(Permissions.READ_ONLY)){
+            while (!LockManager.getReadLock(pid,tid)){
+                //阻塞
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }else{
+            while (!LockManager.getWriteLock(pid,tid)){
+                //阻塞
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
         //先在缓冲区找,找到了先将其移动到头部，然后直接返回
         for (int i = 0; i < pages.length; i++) {
             if(pages[i]!=null&&pages[i].getId().equals(pid)){
@@ -174,9 +193,8 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void unsafeReleasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+    public void unsafeReleasePage(TransactionId tid, PageId pid) {
+        LockManager.releaseLock(pid,tid);
     }
 
     /**
@@ -185,15 +203,12 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        transactionComplete(tid,true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2
-        return false;
+        return LockManager.holdsLock(tid,p);
     }
 
     /**
@@ -204,8 +219,23 @@ public class BufferPool {
      * @param commit a flag indicating whether we should commit or abort
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        LockManager.releaseAllLock(tid);
+
+        if(commit){
+            //flush dirty pages associated to the transaction to disk
+            for (int i = 0; i < pages.length; i++) {
+                if(pages[i]!=null && pages[i].isDirty()!=null && pages[i].isDirty().equals(tid)){
+                    flushPage(i);
+                }
+            }
+        }else{
+            //revert any changes made by the transaction by restoring the page to its on-disk state.
+            for (int i = 0; i < pages.length; i++) {
+                if(pages[i]!=null && pages[i].isDirty()!=null && pages[i].isDirty().equals(tid)){
+                    pages[i] = pages[i].getBeforeImage();
+                }
+            }
+        }
     }
 
     /**
@@ -277,7 +307,7 @@ public class BufferPool {
      */
     public synchronized void flushAllPages() throws IOException {
         for (int i = 0; i < pages.length; i++) {
-            if(pages[i].isDirty()!=null){
+            if(pages[i]!=null&&pages[i].isDirty()!=null){
                 int tableId = pages[i].getId().getTableId();
                 DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
                 databaseFile.writePage(pages[i]);
@@ -315,6 +345,21 @@ public class BufferPool {
         }
     }
 
+    private synchronized  void flushPage(int i){
+
+        if(pages[i]!=null){
+            int tableId = pages[i].getId().getTableId();
+            DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+            try {
+                databaseFile.writePage(pages[i]);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            pages[i].markDirty(false,null);
+        }
+
+    }
+
     /** Write all pages of the specified transaction to disk.
      */
     public synchronized  void flushPages(TransactionId tid) throws IOException {
@@ -327,14 +372,18 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized  void evictPage() throws DbException {
-        Page page = fakeTail.pre.page;
-        if(page.isDirty()!=null){
-            try {
-                flushPage(page.getId());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+
+        Node cur = fakeTail.pre;
+        while (cur!=fakeHead && cur.page.isDirty()!=null){
+            //由于no steal  所以不能抛弃脏页
+            cur = cur.pre;
         }
+
+        if(cur == fakeHead){
+            //所有的页都是脏页
+            throw new DbException("All Pages are dirty in bufferPool");
+        }
+        Page page = cur.page;
         discardPage(page.getId());
     }
 

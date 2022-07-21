@@ -52,7 +52,6 @@ public class HeapPage implements Page {
      * @see BufferPool#getPageSize()
      */
     public HeapPage(HeapPageId id, byte[] data) throws IOException {
-
         this.pid = id;
         this.td = Database.getCatalog().getTupleDesc(id.getTableId());
         this.numSlots = getNumTuples();
@@ -82,8 +81,6 @@ public class HeapPage implements Page {
         }
         dis.close();
         setBeforeImage();
-        //创建完页之后就将其写入磁盘
-
     }
     public HeapPage(HeapPageId id) {
         this.pid = id;

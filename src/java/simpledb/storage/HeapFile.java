@@ -148,12 +148,19 @@ public class HeapFile implements DbFile {
         List<Page> res = new ArrayList<>();
         for (HeapPage page : pages) {
             //通过buffer pool来访问该页
-            HeapPage hp = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_WRITE);
+            HeapPage hp = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_ONLY);
             //该页有空位
             if(hp.getNumEmptySlots()!=0){
-                hp.insertTuple(t);
+                //升级为写锁
+                HeapPage hp_w = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_WRITE);
+                //标记脏页
+                hp_w.markDirty(true,tid);
+                hp_w.insertTuple(t);
                 res.add(hp);
                 return res;
+            }else{
+                //释放锁
+                Database.getBufferPool().unsafeReleasePage(tid,page.pid);
             }
         }
         //所有页都满了,创建新页
@@ -171,11 +178,18 @@ public class HeapFile implements DbFile {
             TransactionAbortedException {
         ArrayList<Page> res = new ArrayList<>();
         for (HeapPage page : pages) {
-            HeapPage hp = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_WRITE);
+            HeapPage hp = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_ONLY);
             if(hp.getTupleSlotNum(t.getRecordId())!=-1){
+                //升级为写锁
+                HeapPage hp_w = (HeapPage)Database.getBufferPool().getPage(tid, page.pid, Permissions.READ_WRITE);
+                //标记脏页
+                hp_w.markDirty(true,tid);
                 hp.deleteTuple(t);
                 res.add(hp);
                 break;
+            }else{
+                //释放锁
+                Database.getBufferPool().unsafeReleasePage(tid,page.pid);
             }
         }
         return res;
