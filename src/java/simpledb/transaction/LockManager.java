@@ -8,7 +8,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class LockManager {
-    volatile ArrayList<TransactionId> readLock;
+    volatile Set<TransactionId> readLock;
 
     volatile TransactionId writeLock;
 
@@ -19,7 +19,7 @@ public class LockManager {
     public static Map<TransactionId,TNode> nodeMap = new HashMap<>();
 
     public LockManager(){
-        readLock = new ArrayList<>();
+        readLock = new HashSet<>();
         writeLock = null;
     }
     public static void reset(){
@@ -89,7 +89,7 @@ public class LockManager {
                 nodeMap.get(tid).next = null;
                 return true;
             }else if(lockManager.readLock.size()!=0){
-                if(lockManager.readLock.size() == 1 && lockManager.readLock.get(0).equals(tid)){
+                if(lockManager.readLock.size() == 1 && lockManager.readLock.iterator().next().equals(tid)){
                     //锁升级
                     lockManager.readLock.clear();
                     lockManager.writeLock = tid;
@@ -100,12 +100,11 @@ public class LockManager {
                 //建立依赖
                 for (TransactionId transactionId : lockManager.readLock) {
                     if(!transactionId.equals(tid)){
-                        nodeMap.getOrDefault(tid,new TNode(tid)).next = nodeMap.get(lockManager.readLock.get(0));
+                        nodeMap.getOrDefault(tid,new TNode(tid)).next = nodeMap.get(transactionId);
+                        deadLockDetect(tid,transactionId);
                         break;
                     }
                 }
-                //死锁检测
-                deadLockDetect(tid,lockManager.readLock.get(0));
                 return false;
             }else{
                 lockManager.writeLock = tid;
@@ -122,8 +121,7 @@ public class LockManager {
         if(lockManager.writeLock == tid){
             lockManager.writeLock = null;
         }else{
-            ArrayList<TransactionId> readLocks = lockManager.readLock;
-            readLocks.remove(tid);
+            lockManager.readLock.remove(tid);
         }
         tpMap.get(tid).remove(pid);
     }

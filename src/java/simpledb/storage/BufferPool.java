@@ -98,6 +98,9 @@ public class BufferPool {
 
     private void deleteNode(Node node){
         this.pageCount--;
+        if(node == null || node == fakeHead || node == fakeTail){
+            return;
+        }
         Node pre = node.pre;
         Node next = node.next;
         pre.next = next;
