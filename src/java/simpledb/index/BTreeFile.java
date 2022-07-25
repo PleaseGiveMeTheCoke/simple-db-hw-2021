@@ -204,17 +204,17 @@ public class BTreeFile implements DbFile {
 		while (iterator.hasNext()){
 			entry = iterator.next();
 			if(f == null){
-				Database.getBufferPool().unsafeReleasePage(tid,pid);
+
 				return findLeafPage(tid,dirtypages,entry.getLeftChild(),perm,f);
 			}else if(entry.getKey().compare(Op.GREATER_THAN,f)){
-				Database.getBufferPool().unsafeReleasePage(tid,pid);
+
 				return findLeafPage(tid,dirtypages,entry.getLeftChild(),perm,f);
 			}else if(entry.getKey().compare(Op.EQUALS,f)){
-				Database.getBufferPool().unsafeReleasePage(tid,pid);
+
 				return findLeafPage(tid,dirtypages,entry.getLeftChild(),perm,f);
 			}
 		}
-		Database.getBufferPool().unsafeReleasePage(tid,pid);
+
 		return findLeafPage(tid,dirtypages,entry.getRightChild(),perm,f);
 	}
 	
@@ -286,7 +286,7 @@ public class BTreeFile implements DbFile {
 			emptyPage.setRightSiblingId(rightSiblingId);
 			page.setRightSiblingId(emptyPage.pid);
 			emptyPage.setLeftSiblingId(page.pid);
-			Database.getBufferPool().unsafeReleasePage(tid,rightSiblingId);
+
 		}else{
 			page.setRightSiblingId(emptyPage.pid);
 			emptyPage.setLeftSiblingId(page.pid);
@@ -375,7 +375,6 @@ public class BTreeFile implements DbFile {
 		}
 
 	}
-	
 	/**
 	 * Method to encapsulate the process of getting a parent page ready to accept new entries.
 	 * This may mean creating a page to become the new root of the tree, splitting the existing 
@@ -779,26 +778,19 @@ public class BTreeFile implements DbFile {
 		//获得左页的最后一个entry
 		Iterator<BTreeEntry> iterator = leftSibling.reverseIterator();
 		for (int i = 0; i < needNum; i++) {
-			BTreeEntry leftLastEntry = iterator.next();
-			//push up
-			leftSibling.deleteKeyAndRightChild(leftLastEntry);
-			leftLastEntry.setLeftChild(leftSibling.pid);
-			leftLastEntry.setRightChild(page.pid);
+			BTreeEntry leftLast = iterator.next();
+			leftSibling.deleteKeyAndRightChild(leftLast);
+			leftLast.setLeftChild(leftLast.getRightChild());
+			leftLast.setRightChild(page.iterator().next().getLeftChild());
+			Field key = parentEntry.getKey();
+			parentEntry.setKey(leftLast.getKey());
+			leftLast.setKey(key);
+			page.insertEntry(leftLast);
+			parent.updateEntry(parentEntry);
 
-			//pull down
-			parent.deleteKeyAndLeftChild(parentEntry);
-			parent.insertEntry(leftLastEntry);
-
-			parentEntry.setLeftChild(page.iterator().next().getLeftChild());
-			parentEntry.setRightChild(page.iterator().next().getLeftChild());
-			page.insertEntry(parentEntry);
-
-			//更新父节点
 			updateParentPointers(tid,dirtypages,page);
 			updateParentPointers(tid,dirtypages,leftSibling);
 			updateParentPointers(tid,dirtypages,parent);
-
-			parentEntry = leftLastEntry;
 		}
 	}
 	
@@ -834,26 +826,19 @@ public class BTreeFile implements DbFile {
 		//获得右页的第一个entry
 		Iterator<BTreeEntry> iterator = rightSibling.iterator();
 		for (int i = 0; i < needNum; i++) {
-			BTreeEntry rightFirstEntry = iterator.next();
-			//push up
-			rightSibling.deleteKeyAndLeftChild(rightFirstEntry);
-			rightFirstEntry.setLeftChild(page.pid);
-			rightFirstEntry.setRightChild(rightSibling.pid);
+			BTreeEntry rightFirst = iterator.next();
+			rightSibling.deleteKeyAndLeftChild(rightFirst);
+			rightFirst.setRightChild(rightFirst.getLeftChild());
+			rightFirst.setLeftChild(page.reverseIterator().next().getRightChild());
+			Field key = parentEntry.getKey();
+			parentEntry.setKey(rightFirst.getKey());
+			rightFirst.setKey(key);
+			page.insertEntry(rightFirst);
+			parent.updateEntry(parentEntry);
 
-			//pull down
-			parent.deleteKeyAndRightChild(parentEntry);
-			parent.insertEntry(rightFirstEntry);
-
-			parentEntry.setLeftChild(page.reverseIterator().next().getRightChild());
-			parentEntry.setRightChild(page.reverseIterator().next().getRightChild());
-			page.insertEntry(parentEntry);
-
-			//更新父节点
 			updateParentPointers(tid,dirtypages,page);
 			updateParentPointers(tid,dirtypages,rightSibling);
 			updateParentPointers(tid,dirtypages,parent);
-
-			parentEntry = rightFirstEntry;
 		}
 
 	}
@@ -886,6 +871,25 @@ public class BTreeFile implements DbFile {
 		// the sibling pointers, and make the right page available for reuse.
 		// Delete the entry in the parent corresponding to the two pages that are merging -
 		// deleteParentEntry() will be useful here
+		Iterator<Tuple> iterator = rightPage.iterator();
+		while(iterator.hasNext()){
+			Tuple next = iterator.next();
+			rightPage.deleteTuple(next);
+			leftPage.insertTuple(next);
+
+		}
+		BTreePageId rightSiblingId = rightPage.getRightSiblingId();
+		if(rightSiblingId!=null){
+			leftPage.setRightSiblingId(rightSiblingId);
+			BTreeLeafPage page = (BTreeLeafPage)getPage(tid, dirtypages, rightSiblingId, Permissions.READ_WRITE);
+			page.setLeftSiblingId(leftPage.getId());
+
+		}else{
+			leftPage.setRightSiblingId(null);
+		}
+		deleteParentEntry(tid,dirtypages,leftPage,parent,parentEntry);
+		setEmptyPage(tid,dirtypages,rightPage.pid.getPageNumber());
+
 	}
 
 	/**
@@ -919,6 +923,21 @@ public class BTreeFile implements DbFile {
 		// and make the right page available for reuse
 		// Delete the entry in the parent corresponding to the two pages that are merging -
 		// deleteParentEntry() will be useful here
+		Iterator<BTreeEntry> iterator = rightPage.iterator();
+		deleteParentEntry(tid,dirtypages,leftPage,parent,parentEntry);
+		parentEntry.setLeftChild(leftPage.reverseIterator().next().getRightChild());
+		parentEntry.setRightChild(leftPage.reverseIterator().next().getRightChild());
+		leftPage.insertEntry(parentEntry);
+		while(iterator.hasNext()){
+			BTreeEntry next = iterator.next();
+			rightPage.deleteKeyAndLeftChild(next);
+			BTreeEntry leftLast = leftPage.reverseIterator().next();
+			leftLast.setRightChild(next.getLeftChild());
+			leftPage.updateEntry(leftLast);
+			leftPage.insertEntry(next);
+		}
+		setEmptyPage(tid,dirtypages,rightPage.pid.getPageNumber());
+		updateParentPointers(tid,dirtypages,leftPage);
 	}
 	
 	/**
@@ -1417,5 +1436,29 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
 	public void close() {
 		super.close();
 		it = null;
+	}
+
+	public boolean repeatedSubstringPattern(String s) {
+		for (int i = 1; i <= s.length()/2; i++) {
+			String test = s.substring(0,i);
+			if(test(test,s.substring(i))){
+				return true;
+			}
+		}
+		return false;
+	}
+	private boolean test(String s1, String s2){
+		int len = s1.length();
+		while (s2.length() >= s1.length()){
+			String s = s2.substring(0, len);
+			if(!s1.equals(s)){
+				return false;
+			}
+			if(s2.length() == s1.length()){
+				return true;
+			}
+			s2 = s2.substring(len);
+		}
+		return false;
 	}
 }

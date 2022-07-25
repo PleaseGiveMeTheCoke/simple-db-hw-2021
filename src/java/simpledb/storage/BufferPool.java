@@ -59,7 +59,7 @@ public class BufferPool {
 
     Page[] pages;
 
-    HashMap<PageId,Node> map;
+    ConcurrentHashMap<PageId,Node> map;
 
     Node fakeHead;
 
@@ -74,7 +74,7 @@ public class BufferPool {
         this.pageCount = 0;
         this.numPages = numPages;
         pages = new Page[numPages];
-        map = new HashMap<>();
+        map = new ConcurrentHashMap<>();
         this.fakeHead = new Node(null);
         this.fakeTail = new Node(null);
         fakeHead.next = fakeTail;
@@ -107,7 +107,7 @@ public class BufferPool {
         next.pre = pre;
         map.remove(node.page.getId());
         for (int i = 0; i < pages.length; i++) {
-            if(pages[i] == node.page){
+            if(pages[i]!=null&&pages[i].getId().equals(node.page.getId())){
                 pages[i] = null;
                 return;
             }
@@ -167,12 +167,19 @@ public class BufferPool {
         }
         //先在缓冲区找,找到了先将其移动到头部，然后直接返回
         for (int i = 0; i < pages.length; i++) {
-            if(pages[i]!=null&&pages[i].getId().equals(pid)){
-                Node node = map.get(pages[i].getId());
-                deleteNode(node);
-                addToHead(node);
-                return pages[i];
-            }
+                if (pages[i] != null && pages[i].getId().equals(pid)) {
+                    synchronized (pages) {
+                        if (pages[i] != null && pages[i].getId().equals(pid)) {
+                            Node node = map.get(pages[i].getId());
+                            deleteNode(node);
+                            addToHead(node);
+
+                            return pages[i];
+                        }
+                    }
+
+                }
+
         }
 
         //找不到就读取页,然后加入缓冲区头部并返回
@@ -181,7 +188,6 @@ public class BufferPool {
         if (pageCount >= numPages) {
             //缓冲区已满，使用策略从缓冲区丢弃一个page
             evictPage();
-
         }
         addToHead(new Node(page));
         return page;
@@ -279,7 +285,7 @@ public class BufferPool {
      * @param tid the transaction deleting the tuple.
      * @param t the tuple to delete
      */
-    public  void deleteTuple(TransactionId tid, Tuple t)
+    public void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
         DbFile file = Database.getCatalog().getDatabaseFile(t.getRecordId().pid.getTableId());
         List<Page> affectedPages = file.deleteTuple(tid, t);
@@ -294,6 +300,7 @@ public class BufferPool {
                 flushPage(page.getId());
             }
             map.get(page.getId()).page = affectedPage;
+
             for (int i = 0; i < pages.length; i++) {
                 if(pages[i]!=null&&pages[i].getId().equals(page.getId())){
                     pages[i] = affectedPage;

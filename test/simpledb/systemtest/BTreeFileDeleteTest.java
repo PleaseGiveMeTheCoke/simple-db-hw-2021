@@ -220,7 +220,6 @@ public class BTreeFileDeleteTest extends SimpleDbTestBase {
 			it = rightChild.iterator();
 			count++;
 		}
-
 		// deleting a page of tuples should bring the internal page below minimum 
 		// occupancy and cause the entries to be redistributed
 		assertEquals(252, rightChild.getNumEmptySlots());

@@ -37,7 +37,11 @@ public class BTreeInternalPage extends BTreePage {
 		Iterator<BTreeEntry> it  = this.iterator();
 		while (it.hasNext()) {
 			Field f = it.next().getKey();
-			assert(null == prev || prev.compare(Op.LESS_THAN_OR_EQ,f));
+			if(!(null == prev || prev.compare(Op.LESS_THAN_OR_EQ,f))){
+				System.out.println(prev);
+				System.out.println(f);
+			};
+			assert ((null == prev || prev.compare(Op.LESS_THAN_OR_EQ,f)));
 			prev = f;
 		}
 
