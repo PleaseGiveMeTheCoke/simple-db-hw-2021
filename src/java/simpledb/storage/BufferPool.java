@@ -12,10 +12,7 @@ import simpledb.transaction.TransactionId;
 import java.io.*;
 
 import java.sql.SQLOutput;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -97,10 +94,10 @@ public class BufferPool {
     }
 
     private void deleteNode(Node node){
-        this.pageCount--;
         if(node == null || node == fakeHead || node == fakeTail){
             return;
         }
+        this.pageCount--;
         Node pre = node.pre;
         Node next = node.next;
         pre.next = next;
@@ -242,6 +239,11 @@ public class BufferPool {
             for (int i = 0; i < pages.length; i++) {
                 if(pages[i]!=null && pages[i].isDirty()!=null && pages[i].isDirty().equals(tid)){
                     pages[i] = pages[i].getBeforeImage();
+                    Node node = map.get(pages[i].getId());
+                    if(node!=null){
+                        node.page = pages[i].getBeforeImage();
+                    }
+
                 }
             }
         }
@@ -295,10 +297,10 @@ public class BufferPool {
     private void replacePages(TransactionId tid, List<Page> affectedPages) throws TransactionAbortedException, DbException, IOException {
         for (Page affectedPage : affectedPages) {
             Page page = getPage(tid, affectedPage.getId(), Permissions.READ_WRITE);
-            if(page.isDirty()!=null){
-
-                flushPage(page.getId());
-            }
+//            if(page.isDirty()!=null){
+//                flushPage(page.getId());
+//            }
+            affectedPage.markDirty(true,tid);
             map.get(page.getId()).page = affectedPage;
 
             for (int i = 0; i < pages.length; i++) {
@@ -306,10 +308,8 @@ public class BufferPool {
                     pages[i] = affectedPage;
                 }
             }
-            page.markDirty(true, tid);
         }
     }
-
     /**
      * Flush all dirty pages to disk.
      * NB: Be careful using this routine -- it writes dirty data to disk so will
@@ -320,8 +320,16 @@ public class BufferPool {
             if(pages[i]!=null&&pages[i].isDirty()!=null){
                 int tableId = pages[i].getId().getTableId();
                 DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+                // append an update record to the log, with
+                // a before-image and after-image.
+                TransactionId dirtier = pages[i].isDirty();
+                if (dirtier != null){
+                    Database.getLogFile().logWrite(dirtier, pages[i].getBeforeImage(), pages[i]);
+                    Database.getLogFile().force();
+                }
                 databaseFile.writePage(pages[i]);
                 pages[i].markDirty(false,null);
+                pages[i].setBeforeImage();
             }
         }
 
@@ -349,8 +357,17 @@ public class BufferPool {
             if(pages[i]!=null&&pages[i].getId().equals(pid)){
                 int tableId = pages[i].getId().getTableId();
                 DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
+                // append an update record to the log, with
+                // a before-image and after-image.
+                TransactionId dirtier = pages[i].isDirty();
+                if (dirtier != null){
+                    Database.getLogFile().logWrite(dirtier, pages[i].getBeforeImage(), pages[i]);
+                    Database.getLogFile().force();
+                }
+
                 databaseFile.writePage(pages[i]);
                 pages[i].markDirty(false,null);
+                pages[i].setBeforeImage();
             }
         }
     }
@@ -361,11 +378,19 @@ public class BufferPool {
             int tableId = pages[i].getId().getTableId();
             DbFile databaseFile = Database.getCatalog().getDatabaseFile(tableId);
             try {
+                // append an update record to the log, with
+                // a before-image and after-image.
+                TransactionId dirtier = pages[i].isDirty();
+                if (dirtier != null){
+                    Database.getLogFile().logWrite(dirtier, pages[i].getBeforeImage(), pages[i]);
+                    Database.getLogFile().force();
+                }
                 databaseFile.writePage(pages[i]);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
             pages[i].markDirty(false,null);
+            pages[i].setBeforeImage();
         }
 
     }

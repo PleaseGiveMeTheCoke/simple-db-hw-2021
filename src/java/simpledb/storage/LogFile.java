@@ -459,7 +459,48 @@ public class LogFile {
         synchronized (Database.getBufferPool()) {
             synchronized(this) {
                 preAppend();
-                // some code goes here
+                long curOffset = raf.getFilePointer();
+                Long firstRecord = tidToFirstLogRecord.get(tid.getId());
+                raf.seek(firstRecord);
+                Set<PageId> set = new HashSet<>();
+                while (true) {
+                    try {
+                        int cpType = raf.readInt();
+                        long cpTid = raf.readLong();
+                        switch (cpType) {
+                            case BEGIN_RECORD:
+                            case ABORT_RECORD:
+                            case COMMIT_RECORD:
+                                raf.readLong();
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int numTransactions = raf.readInt();
+                                while (numTransactions-- > 0) {
+                                    raf.readLong();
+                                    raf.readLong();
+                                }
+                                raf.readLong();
+                                break;
+                            case UPDATE_RECORD:
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                if(cpTid == tid.getId() && !set.contains(before.getId())){
+                                    set.add(before.getId());
+                                    DbFile databaseFile = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                                    databaseFile.writePage(before);
+                                    Database.getBufferPool().discardPage(before.getId());
+                                }
+                                raf.readLong();
+                                break;
+                        }
+
+                    } catch (EOFException e) {
+                        //e.printStackTrace();
+                        break;
+                    }
+                }
+                // Return the file pointer to its original position
+                raf.seek(curOffset);
             }
         }
     }
@@ -486,10 +527,113 @@ public class LogFile {
         synchronized (Database.getBufferPool()) {
             synchronized (this) {
                 recoveryUndecided = false;
-                // some code goes here
+                raf.seek(0);
+                long checkpoints = raf.readLong();
+                /**
+                 * raf.writeInt(CHECKPOINT_RECORD);
+                 * raf.writeLong(-1); //no tid , but leave space for convenience
+                 * //write list of outstanding transactions
+                 * raf.writeInt(keys.size());
+                 * while (els.hasNext()) {
+                 *     Long key = els.next();
+                 *     Debug.log("WRITING CHECKPOINT TRANSACTION ID: " + key);
+                 *     raf.writeLong(key);
+                 *     //Debug.log("WRITING CHECKPOINT TRANSACTION OFFSET: " + tidToFirstLogRecord.get(key));
+                 *     raf.writeLong(tidToFirstLogRecord.get(key));
+                 * }
+                 */
+                Set<Long> loserTransaction = new HashSet<>();
+                Map<Long, Page> earliestData = new HashMap<>();
+                Map<Long, Page> latestData = new HashMap<>();
+                if (checkpoints != -1) {
+                    raf.seek(checkpoints);
+                    raf.readInt();
+                    raf.readLong();
+                    int count = raf.readInt();
+
+                    for (int j = 0; j < count; j++) {
+                        Long key = raf.readLong();
+                        loserTransaction.add(key);
+                        Long firstRecord = raf.readLong();
+                        long curPoint = raf.getFilePointer();
+                        raf.seek(firstRecord);
+                        while (raf.getFilePointer() < checkpoints) {
+                            int cpType = raf.readInt();
+                            long cpTid = raf.readLong();
+                            switch (cpType) {
+                                case UPDATE_RECORD:
+                                    Page before = readPageData(raf);
+                                    Page after = readPageData(raf);
+                                    if (cpTid == key) {
+                                        if (!earliestData.containsKey(cpTid)) {
+                                            earliestData.put(cpTid, before);
+                                        }
+                                        latestData.put(cpTid, after);
+                                    }
+                                    raf.readLong();
+                                    break;
+                                default:
+                                    raf.readLong();
+                                    break;
+                            }
+                        }
+                        raf.seek(curPoint);
+                    }
+                    raf.readLong();
+                }
+                    while (true) {
+                        try {
+                            int cpType = raf.readInt();
+                            long cpTid = raf.readLong();
+                            switch (cpType) {
+                                case BEGIN_RECORD:
+                                    loserTransaction.add(cpTid);
+                                    raf.readLong();
+                                    break;
+                                case ABORT_RECORD:
+                                    loserTransaction.add(cpTid);
+                                    raf.readLong();
+                                    break;
+                                case COMMIT_RECORD:
+                                    loserTransaction.remove(cpTid);
+                                    raf.readLong();
+                                    break;
+                                case UPDATE_RECORD:
+                                    Page before = readPageData(raf);
+                                    Page after = readPageData(raf);
+                                    if (!earliestData.containsKey(cpTid)) {
+                                        earliestData.put(cpTid, before);
+                                    }
+                                    latestData.put(cpTid, after);
+                                    raf.readLong();
+                                    break;
+                            }
+
+                        } catch (EOFException e) {
+                            //e.printStackTrace();
+                            break;
+                        }
+                    }
+
+                    for (Long loser : loserTransaction) {
+                        Page before = earliestData.get(loser);
+                        DbFile databaseFile = Database.getCatalog().getDatabaseFile(before.getId().getTableId());
+                        databaseFile.writePage(before);
+                        Database.getBufferPool().discardPage(before.getId());
+                        latestData.remove(loser);
+                    }
+
+                    for (Long winner : latestData.keySet()) {
+                        Page after = latestData.get(winner);
+                        DbFile databaseFile = Database.getCatalog().getDatabaseFile(after.getId().getTableId());
+                        databaseFile.writePage(after);
+                        Database.getBufferPool().discardPage(after.getId());
+                    }
+
+                }
             }
-         }
-    }
+        }
+
 
     /** Print out a human readable represenation of the log */
     public void print() throws IOException {

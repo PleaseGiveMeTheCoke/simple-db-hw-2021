@@ -31,7 +31,7 @@ public class Database {
         _bufferpool = new BufferPool(BufferPool.DEFAULT_PAGES);
         LogFile tmp = null;
         try {
-            tmp = new LogFile(new File(LOGFILENAME));
+            tmp = new LogFile(new File(LOGFILENAME+".txt"));
         } catch (IOException e) {
             e.printStackTrace();
             System.exit(1);
@@ -77,6 +77,7 @@ public class Database {
 
     // reset the database, used for unit tests only.
     public static void reset() {
+        LockManager.reset();
         _instance.set(new Database());
     }
 

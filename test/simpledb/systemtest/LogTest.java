@@ -225,7 +225,7 @@ public class LogTest extends SimpleDbTestBase {
 
         // *** Test:
         // T1 start, T2 start and commit, T1 abort
-
+        Database.getLogFile().print();
         Transaction t1 = new Transaction();
         t1.start();
         insertRow(hf1, t1, 3);
@@ -242,6 +242,7 @@ public class LogTest extends SimpleDbTestBase {
 
         Transaction t = new Transaction();
         t.start();
+
         look(hf1, t, 1, true);
         look(hf1, t, 2, true);
         look(hf1, t, 3, false);
